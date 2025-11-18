@@ -4,224 +4,157 @@ import sanitizeHtml from "sanitize-html";
 const createEmailRouter = (resend, redis) => {
   const router = express.Router();
 
-  const OTP_TTL_SECONDS = Number(process.env.OTP_TTL_SECONDS) || 600; // 10 minutes
-  const COOLDOWN_SECONDS = Number(process.env.OTP_COOLDOWN_SECONDS) || 60; // 60s
+  // ── Config (all from .env) ─────────────────────────────
+  const OTP_TTL_SECONDS = Number(process.env.OTP_TTL_SECONDS) || 600;
+  const COOLDOWN_SECONDS = Number(process.env.OTP_COOLDOWN_SECONDS) || 60;
   const MAX_VERIFY_ATTEMPTS = Number(process.env.MAX_VERIFY_ATTEMPTS) || 5;
   const RESEND_OTP_FROM = process.env.FROM_VERIFY || "verify@mail.sakhiledumisa.com";
 
+  const TEMPLATE_INBOX_ID = process.env.RESEND_TEMPLATE_INBOX_ID;
+  const TEMPLATE_CONFIRMATION_ID = process.env.RESEND_TEMPLATE_CONFIRMATION_ID;
+  const TEMPLATE_OTP_ID = process.env.RESEND_TEMPLATE_OTP_ID;
+
+  // Safety check
+  if (!TEMPLATE_INBOX_ID || !TEMPLATE_CONFIRMATION_ID || !TEMPLATE_OTP_ID) {
+    console.error("❌ Missing Resend template IDs in .env — emails will fail!");
+  }
+
   const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-  // Convert a name like "tina angel" or "TINA angel" into "Tina Angel"
-  const titleCase = (input = '') => {
-    return String(input)
+  const titleCase = (str = "") =>
+    str
       .trim()
-      .split(/\s+/)
-      .map(word => {
-        return word
-          .split(/-/g)
-          .map(part => (part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : part))
-          .join('-');
-      })
-      .join(' ');
-  };
+      .toLowerCase()
+      .replace(/(^|\s|-)\S/g, (l) => l.toUpperCase());
 
+  // ── SEND CONTACT FORM EMAIL ─────────────────────────────
   router.post("/api/send-email", async (req, res) => {
     try {
       const { to, userName, sentBy, message, from = "form@mail.sakhiledumisa.com" } = req.body;
 
-      // Input validation
-      if (!to || !userName || !sentBy || !message) {
-        return res.status(400).json({ error: "Missing required fields: to, userName, sentBy, and message" });
-      }
+      if (!to || !userName || !sentBy || !message)
+        return res.status(400).json({ error: "Missing required fields" });
 
-      // Validate email formats
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(to)) {
-        return res.status(400).json({ error: "Invalid recipient (to) email format" });
-      }
-      if (!emailRegex.test(sentBy)) {
-        return res.status(400).json({ error: "Invalid sender (sentBy) email format" });
-      }
+      if (!emailRegex.test(to) || !emailRegex.test(sentBy))
+        return res.status(400).json({ error: "Invalid email" });
 
-      if (from !== "form@mail.sakhiledumisa.com") {
+      if (from !== "form@mail.sakhiledumisa.com")
         return res.status(400).json({ error: "Invalid from address" });
+
+      if (!resend) throw new Error("Resend not initialized");
+
+      // Verify sender email
+      if (redis && !(await redis.get(`verified:${sentBy}`))) {
+        return res.status(403).json({ error: "Sender email not verified" });
       }
 
-      if (!resend) {
-        throw new Error("Resend client not initialized");
-      }
-
-      if (!redis) {
-        console.warn('Redis client not provided — verification checks will be skipped (insecure).');
-      } else {
-        const verifiedKey = `verified:${sentBy}`;
-        const isVerified = await redis.get(verifiedKey);
-        if (!isVerified) {
-          return res.status(403).json({ error: "Sender email not verified. Please verify via OTP before sending messages." });
-        }
-      }
-
-      // Sanitize inputs
-      const cleanUserName = sanitizeHtml(userName, { allowedTags: [], allowedAttributes: {} }).trim();
-      const titledUserName = titleCase(cleanUserName);
+      const titledUserName = titleCase(sanitizeHtml(userName));
       const cleanMessage = sanitizeHtml(message, { allowedTags: [], allowedAttributes: {} }).trim();
-      const cleanSentBy = sanitizeHtml(sentBy, { allowedTags: [], allowedAttributes: {} }).trim();
+      const cleanSentBy = sanitizeHtml(sentBy).trim();
 
-      const subject = `New contact form message from ${titledUserName}`;
-      const textBody = `You have received a new message via the contact form from ${titledUserName} <${sentBy}>:\n\n${cleanMessage}\n\nReply to: ${sentBy}`;
+      const subject = `New message from ${titledUserName}`;
+      const textFallback = `From: ${titledUserName} <${cleanSentBy}>\n\n${cleanMessage}`;
 
-      // Send email using Resend template with text fallback
+      // Main templated email
       const data = await resend.emails.send({
         from,
         to,
         subject,
-        text: textBody, // Required fallback
-        template: {
-          id: process.env.RESEND_TEMPLATE_INBOX_ID,
-          variables: {
-            message: cleanMessage,
-            userEmail: cleanSentBy,
-            userName: titledUserName
-          }
+        text: textFallback,
+        reply_to: cleanSentBy,
+        template_id: TEMPLATE_INBOX_ID,
+        template_variables: {
+          userName: titledUserName,
+          message: cleanMessage,
+          userEmail: cleanSentBy,
         },
-        reply_to: sentBy,
       });
 
-      // Send thank-you email to the user
-      const thankFrom = process.env.FROM_CONTACT || from;
-      const thankSubject = `Thanks for your message, ${titledUserName}`;
-      const thankText = `Hi ${titledUserName},\n\nThanks for reaching out — we've received your message and will get back to you shortly.\n\nReply to: ${to}`;
-
-      let thankYouResult = null;
+      // Thank-you auto-reply
       try {
-        thankYouResult = await resend.emails.send({
-          from: thankFrom,
-          to: sentBy,
-          subject: thankSubject,
-          text: thankText, // Required fallback
-          template: {
-            id: process.env.RESEND_TEMPLATE_CONFIRMATION_ID,
-            variables: {
-              userName: titledUserName
-            }
-          },
+        await resend.emails.send({
+          from: process.env.FROM_CONTACT || from,
+          to: cleanSentBy,
+          subject: `Thanks, ${titledUserName}! We got your message.`,
+          text: `Hi ${titledUserName},\n\nThanks for reaching out — we'll reply soon!`,
+          template_id: TEMPLATE_CONFIRMATION_ID,
+          template_variables: { userName: titledUserName },
         });
       } catch (err) {
-        console.error('Error sending thank-you email:', err.message || err);
-        return res.status(200).json({ message: 'Email sent successfully', data, thankYouError: err.message || String(err) });
+        console.warn("Thank-you email failed (non-blocking):", err.message);
       }
 
-      res.status(200).json({ message: "Email sent successfully", data, thankYou: thankYouResult });
+      res.json({ success: true, data });
     } catch (error) {
-      console.error("Error sending email:", error.message);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.message || "Something went wrong!" });
+      console.error("Send email failed:", error);
+      res.status(error.statusCode || 500).json({ error: error.message || "Failed" });
     }
   });
 
-  // Send OTP to an email for verification
+  // ── SEND OTP ───────────────────────────────────────────
   router.post("/api/send-otp", async (req, res) => {
     try {
       const { email } = req.body;
-      if (!email) return res.status(400).json({ error: "Missing email" });
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        return res.status(400).json({ error: "Valid email required" });
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) return res.status(400).json({ error: "Invalid email format" });
+      if (!resend) throw new Error("Resend not initialized");
 
-      if (!resend) throw new Error("Resend client not initialized");
-
-      // If no redis, fallback to a temporary in-memory cooldown (not recommended)
-      if (!redis) {
-        const code = generateOtp();
-        const text = `Your verification code is: ${code}\n\nThis code expires in ${Math.floor(OTP_TTL_SECONDS / 60)} minutes.`;
-        
-        const data = await resend.emails.send({
-          from: RESEND_OTP_FROM,
-          to: email,
-          subject: "Email verification code",
-          text: text, // Required fallback
-          template: {
-            id: process.env.RESEND_TEMPLATE_OTP_ID,
-            variables: {
-              code: code
-            }
-          }
-        });
-        return res.status(200).json({ message: "OTP sent (no redis)", data, code });
-      }
-
-      const cooldownKey = `otp-cooldown:${email}`;
-      const cooldownSet = await redis.set(cooldownKey, '1', { NX: true, EX: COOLDOWN_SECONDS });
-      if (!cooldownSet) {
-        return res.status(429).json({ error: `Please wait before requesting another code.` });
+      if (redis) {
+        const cooldown = await redis.get(`otp-cooldown:${email}`);
+        if (cooldown) return res.status(429).json({ error: "Too many requests" });
+        await redis.set(`otp-cooldown:${email}`, "1", { EX: COOLDOWN_SECONDS });
       }
 
       const code = generateOtp();
-      const otpKey = `otp:${email}`;
-      await redis.set(otpKey, code, { EX: OTP_TTL_SECONDS });
-      // reset attempt counter
-      const attemptsKey = `otp-attempts:${email}`;
-      await redis.del(attemptsKey);
+      if (redis) {
+        await redis.set(`otp:${email}`, code, { EX: OTP_TTL_SECONDS });
+        await redis.del(`otp-attempts:${email}`);
+      }
 
-      const text = `Email verification code is: ${code}\n\nThis code expires in ${Math.floor(OTP_TTL_SECONDS / 60)} minutes.`;
-      
-      const data = await resend.emails.send({ 
-        from: RESEND_OTP_FROM, 
-        to: email, 
-        subject: "Email verification code", 
-        text: text, // Required fallback
-        template: {
-          id: process.env.RESEND_TEMPLATE_OTP_ID,
-          variables: {
-            code: code
-          }
-        }
+      await resend.emails.send({
+        from: RESEND_OTP_FROM,
+        to: email,
+        subject: "Your verification code",
+        text: `Code: ${code}`,
+        template_id: TEMPLATE_OTP_ID,
+        template_variables: { code },
       });
 
-      res.status(200).json({ message: "OTP sent", data });
+      res.json({ success: true, message: "OTP sent" });
     } catch (error) {
-      console.error("Error sending OTP:", error.message);
-      res.status(error.statusCode || 500).json({ error: error.message || "Something went wrong sending OTP" });
+      console.error("OTP failed:", error);
+      res.status(500).json({ error: "Failed to send OTP" });
     }
   });
 
-  // Verify an OTP for an email
+  // ── VERIFY OTP ─────────────────────────────────────────
   router.post("/api/verify-otp", async (req, res) => {
     try {
       const { email, code } = req.body;
-      if (!email || !code) return res.status(400).json({ error: "Missing email or code" });
+      if (!email || !code) return res.status(400).json({ error: "Email & code required" });
+      if (!redis) return res.status(500).json({ error: "Redis required" });
 
-      if (!redis) {
-        return res.status(500).json({ error: "Redis not configured for verification" });
-      }
+      const stored = await redis.get(`otp:${email}`);
+      if (!stored) return res.status(400).json({ error: "Invalid or expired code" });
 
-      const otpKey = `otp:${email}`;
-      const stored = await redis.get(otpKey);
-      if (!stored) return res.status(400).json({ error: "No OTP requested or it expired" });
+      const attempts = await redis.incr(`otp-attempts:${email}`);
+      if (attempts === 1) await redis.expire(`otp-attempts:${email}`, OTP_TTL_SECONDS);
+      if (attempts > MAX_VERIFY_ATTEMPTS)
+        return res.status(429).json({ error: "Too many attempts" });
 
-      const attemptsKey = `otp-attempts:${email}`;
-      const attempts = await redis.incr(attemptsKey);
-      if (attempts === 1) {
-        await redis.expire(attemptsKey, OTP_TTL_SECONDS);
-      }
-      if (attempts > MAX_VERIFY_ATTEMPTS) {
-        return res.status(429).json({ error: "Too many attempts, please request a new code." });
-      }
+      if (stored !== String(code).trim())
+        return res.status(400).json({ error: "Wrong code" });
 
-      if (stored !== String(code).trim()) {
-        return res.status(400).json({ error: "Invalid OTP" });
-      }
+      await redis.del(`otp:${email}`);
+      await redis.del(`otp-attempts:${email}`);
+      await redis.set(`verified:${email}`, "1");
 
-      // success: mark verified and cleanup
-      await redis.del(otpKey);
-      await redis.del(attemptsKey);
-      await redis.set(`verified:${email}`, '1');
-
-      res.status(200).json({ message: "Email verified" });
+      res.json({ success: true, message: "Verified!" });
     } catch (error) {
-      console.error("Error verifying OTP:", error.message);
-      res.status(500).json({ error: "Something went wrong verifying OTP" });
+      console.error("Verify failed:", error);
+      res.status(500).json({ error: "Verification error" });
     }
   });
 
