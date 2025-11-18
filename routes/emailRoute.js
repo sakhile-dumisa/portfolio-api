@@ -10,14 +10,6 @@ const createEmailRouter = (resend, redis) => {
   const RESEND_OTP_FROM = process.env.FROM_VERIFY || "verify@mail.sakhiledumisa.com";
 
   const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
-  // Simple HTML escape to safely embed user-provided text into templates
-  const escapeHtml = (unsafe = '') =>
-    String(unsafe)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
 
   // Convert a name like "tina angel" or "TINA angel" into "Tina Angel"
   const titleCase = (input = '') => {
@@ -25,7 +17,6 @@ const createEmailRouter = (resend, redis) => {
       .trim()
       .split(/\s+/)
       .map(word => {
-        // keep single-letter words uppercase (e.g., 'a', 'i') and preserve common hyphenated parts
         return word
           .split(/-/g)
           .map(part => (part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : part))
@@ -34,8 +25,6 @@ const createEmailRouter = (resend, redis) => {
       .join(' ');
   };
 
-
-  
   router.post("/api/send-email", async (req, res) => {
     try {
       const { to, userName, sentBy, message, from = "form@mail.sakhiledumisa.com" } = req.body;
@@ -54,19 +43,14 @@ const createEmailRouter = (resend, redis) => {
         return res.status(400).json({ error: "Invalid sender (sentBy) email format" });
       }
 
-      // Validate from address (Resend only allows your verified from address)
       if (from !== "form@mail.sakhiledumisa.com") {
         return res.status(400).json({ error: "Invalid from address" });
       }
-
-      // Ensure sentBy (user email) has been verified via OTP before sending contact email
-
 
       if (!resend) {
         throw new Error("Resend client not initialized");
       }
 
-      // If redis client wasn't injected, warn and proceed with in-memory verification fallback
       if (!redis) {
         console.warn('Redis client not provided — verification checks will be skipped (insecure).');
       } else {
@@ -77,39 +61,31 @@ const createEmailRouter = (resend, redis) => {
         }
       }
 
-      // Sanitize inputs for safety (message should be plain text)
-  const cleanUserName = sanitizeHtml(userName, { allowedTags: [], allowedAttributes: {} }).trim();
-  const titledUserName = titleCase(cleanUserName);
-  const cleanMessage = sanitizeHtml(message, { allowedTags: [], allowedAttributes: {} }).trim();
-  const cleanSentBy = sanitizeHtml(sentBy, { allowedTags: [], allowedAttributes: {} }).trim();
+      // Sanitize inputs
+      const cleanUserName = sanitizeHtml(userName, { allowedTags: [], allowedAttributes: {} }).trim();
+      const titledUserName = titleCase(cleanUserName);
+      const cleanMessage = sanitizeHtml(message, { allowedTags: [], allowedAttributes: {} }).trim();
+      const cleanSentBy = sanitizeHtml(sentBy, { allowedTags: [], allowedAttributes: {} }).trim();
 
-  const subject = `New contact form message from ${titledUserName}`;
-  const textBody = `You have received a new message via the contact form from ${titledUserName} <${sentBy}>:\n\n${cleanMessage}\n\nReply to: ${sentBy}`;
+      const subject = `New contact form message from ${titledUserName}`;
 
-      // Send email using Resend template and set reply_to to the user's email
+      // Send email using Resend template
       const data = await resend.emails.send({
         from,
         to,
         subject,
-        text: textBody,
         templateId: 'inbox',
-        personalization: [
-          {
-            email: to,
-            data: {
-              message: cleanMessage,
-              userEmail: cleanSentBy,
-              userName: titledUserName
-            }
-          }
-        ],
+        variables: {
+          message: cleanMessage,
+          userEmail: cleanSentBy,
+          userName: titledUserName
+        },
         reply_to: sentBy,
       });
 
-      // After successfully sending the contact email, send a thank-you email to the user
+      // Send thank-you email to the user
       const thankFrom = process.env.FROM_CONTACT || from;
       const thankSubject = `Thanks for your message, ${titledUserName}`;
-      const thankText = `Hi ${titledUserName},\n\nThanks for reaching out — we've received your message and will get back to you shortly.\n\nReply to: ${to}`;
 
       let thankYouResult = null;
       try {
@@ -117,20 +93,13 @@ const createEmailRouter = (resend, redis) => {
           from: thankFrom,
           to: sentBy,
           subject: thankSubject,
-          text: thankText,
           templateId: 'confirmation-of-email-receipt',
-          personalization: [
-            {
-              email: sentBy,
-              data: {
-                userName: titledUserName
-              }
-            }
-          ],
+          variables: {
+            userName: titledUserName
+          },
         });
       } catch (err) {
         console.error('Error sending thank-you email:', err.message || err);
-        // don't fail the main request if thank-you fails; include the error in the response
         return res.status(200).json({ message: 'Email sent successfully', data, thankYouError: err.message || String(err) });
       }
 
@@ -156,25 +125,15 @@ const createEmailRouter = (resend, redis) => {
 
       // If no redis, fallback to a temporary in-memory cooldown (not recommended)
       if (!redis) {
-        // generate and send without storing verification state
         const code = generateOtp();
-        const text = `Your verification code is: ${code}\n\nThis code expires in ${Math.floor(OTP_TTL_SECONDS / 60)} minutes.`;
-        
-
         const data = await resend.emails.send({
           from: RESEND_OTP_FROM,
           to: email,
           subject: "Email verification code",
-          text,
           templateId: 'otp-code',
-          personalization: [
-            {
-              email: email,
-              data: {
-                code: code
-              }
-            }
-          ]
+          variables: {
+            code: code
+          }
         });
         return res.status(200).json({ message: "OTP sent (no redis)", data, code });
       }
@@ -191,23 +150,15 @@ const createEmailRouter = (resend, redis) => {
       // reset attempt counter
       const attemptsKey = `otp-attempts:${email}`;
       await redis.del(attemptsKey);
-
-      const text = `Email verification code is: ${code}\n\nThis code expires in ${Math.floor(OTP_TTL_SECONDS / 60)} minutes.`;
       
       const data = await resend.emails.send({ 
         from: RESEND_OTP_FROM, 
         to: email, 
         subject: "Email verification code", 
-        text, 
         templateId: 'otp-code',
-        personalization: [
-          {
-            email: email,
-            data: {
-              code: code
-            }
-          }
-        ]
+        variables: {
+          code: code
+        }
       });
 
       res.status(200).json({ message: "OTP sent", data });
