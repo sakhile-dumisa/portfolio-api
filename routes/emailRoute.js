@@ -115,7 +115,7 @@ const createEmailRouter = (resend, redis) => {
         subject: "Your verification code",
         template: {
           id: TEMPLATE_OTP_ID,
-          variables: { code },
+          variables: { code: Number(code) },
         },
       });
 
