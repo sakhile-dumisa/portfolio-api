@@ -74,11 +74,13 @@ const createEmailRouter = (resend, redis) => {
         from,
         to,
         subject,
-        templateId: 'inbox',
-        variables: {
-          message: cleanMessage,
-          userEmail: cleanSentBy,
-          userName: titledUserName
+        template: {
+          id: 'inbox',
+          variables: {
+            message: cleanMessage,
+            userEmail: cleanSentBy,
+            userName: titledUserName
+          }
         },
         reply_to: sentBy,
       });
@@ -93,9 +95,11 @@ const createEmailRouter = (resend, redis) => {
           from: thankFrom,
           to: sentBy,
           subject: thankSubject,
-          templateId: 'confirmation-of-email-receipt',
-          variables: {
-            userName: titledUserName
+          template: {
+            id: 'confirmation-of-email-receipt',
+            variables: {
+              userName: titledUserName
+            }
           },
         });
       } catch (err) {
@@ -130,9 +134,11 @@ const createEmailRouter = (resend, redis) => {
           from: RESEND_OTP_FROM,
           to: email,
           subject: "Email verification code",
-          templateId: 'otp-code',
-          variables: {
-            code: code
+          template: {
+            id: 'otp-code',
+            variables: {
+              code: code
+            }
           }
         });
         return res.status(200).json({ message: "OTP sent (no redis)", data, code });
@@ -155,9 +161,11 @@ const createEmailRouter = (resend, redis) => {
         from: RESEND_OTP_FROM, 
         to: email, 
         subject: "Email verification code", 
-        templateId: 'otp-code',
-        variables: {
-          code: code
+        template: {
+          id: 'otp-code',
+          variables: {
+            code: code
+          }
         }
       });
 
