@@ -83,166 +83,33 @@ const createEmailRouter = (resend, redis) => {
   const cleanMessage = sanitizeHtml(message, { allowedTags: [], allowedAttributes: {} }).trim();
   const cleanSentBy = sanitizeHtml(sentBy, { allowedTags: [], allowedAttributes: {} }).trim();
 
-  // escape for safe HTML embedding
-  const escapedUserName = escapeHtml(titledUserName);
-  const escapedSentBy = escapeHtml(cleanSentBy);
-
   const subject = `New contact form message from ${titledUserName}`;
   const textBody = `You have received a new message via the contact form from ${titledUserName} <${sentBy}>:\n\n${cleanMessage}\n\nReply to: ${sentBy}`;
 
-      // Build a simple HTML email (sanitize and preserve line breaks)
-      const htmlMessage = escapeHtml(cleanMessage).replace(/\r\n|\r|\n/g, '<br>');
-
-      const html = `
-       <!doctype html>
-<html>
-  <body>
-    <div
-      style='background-color:#FFFFFF;color:#333333;font-family:Bahnschrift, "DIN Alternate", "Franklin Gothic Medium", "Nimbus Sans Narrow", sans-serif-condensed, sans-serif;font-size:16px;font-weight:400;letter-spacing:0.15008px;line-height:1.5;margin:0;padding:32px 0;min-height:100%;width:100%'
-    >
-      <table
-        align="center"
-        width="100%"
-        style="margin:0 auto;max-width:600px;background-color:#FFFFFF"
-        role="presentation"
-        cellspacing="0"
-        cellpadding="0"
-        border="0"
-      >
-        <tbody>
-          <tr style="width:100%">
-            <td>
-              <div style="padding:16px 24px 24px 24px">
-                <table
-                  align="center"
-                  width="100%"
-                  cellpadding="0"
-                  border="0"
-                  style="table-layout:fixed;border-collapse:collapse"
-                >
-                  <tbody style="width:100%">
-                    <tr style="width:100%">
-                      <td
-                        style="box-sizing:content-box;vertical-align:middle;padding-left:0;padding-right:0"
-                      >
-                        <div style="padding:0px 0px 0px 0px">
-                          <h2
-                            style='font-weight:normal;text-align:left;margin:0;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-size:24px;padding:0px 0px 0px 0px'
-                          >
-                            ${escapedUserName}
-                          </h2>
-                        </div>
-                      </td>
-                      <td
-                        style="box-sizing:content-box;vertical-align:middle;padding-left:0;padding-right:0"
-                      >
-                        <div style="padding:0px 0px 0px 0px">
-                          <div
-                            style='color:#808080;font-size:14px;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-weight:normal;text-align:right;padding:0px 0px 0px 0px'
-                          >
-                            ${new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' })}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div
-                style='color:#404040;font-size:16px;font-family:Bahnschrift, "DIN Alternate", "Franklin Gothic Medium", "Nimbus Sans Narrow", sans-serif-condensed, sans-serif;font-weight:normal;text-align:left;padding:16px 24px 16px 24px'
-              >
-                ${htmlMessage}
-              </div>
-              <div style="padding:16px 0px 16px 0px">
-                <hr
-                  style="width:100%;border:none;border-top:1px solid #EEEEEE;margin:0"
-                />
-              </div>
-              <div
-                style='font-size:14px;font-family:Bahnschrift, "DIN Alternate", "Franklin Gothic Medium", "Nimbus Sans Narrow", sans-serif-condensed, sans-serif;font-weight:normal;text-align:left;padding:16px 24px 16px 24px'
-              >
-                ${escapedSentBy} has messaged you.
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </body>
-</html>`;
-
-      // Send HTML + plain-text email using Resend and set reply_to to the user's email
+      // Send email using Resend template and set reply_to to the user's email
       const data = await resend.emails.send({
         from,
         to,
         subject,
         text: textBody,
-        html,
+        templateId: 'inbox',
+        personalization: [
+          {
+            email: to,
+            data: {
+              message: cleanMessage,
+              userEmail: cleanSentBy,
+              userName: titledUserName
+            }
+          }
+        ],
         reply_to: sentBy,
       });
 
       // After successfully sending the contact email, send a thank-you email to the user
       const thankFrom = process.env.FROM_CONTACT || from;
-  const thankSubject = `Thanks for your message, ${titledUserName}`;
-  const thankText = `Hi ${titledUserName},\n\nThanks for reaching out — we've received your message and will get back to you shortly.\n\nReply to: ${to}`;
-      const thankHtml = `<!doctype html>
-<html>
-  <body>
-    <div
-      style='background-color:#ffffff;color:#FFFFFF;font-family:"Iowan Old Style", "Palatino Linotype", "URW Palladio L", P052, serif;font-size:16px;font-weight:400;letter-spacing:0.15008px;line-height:1.5;margin:0;padding:32px 0;min-height:100%;width:100%'
-    >
-      <table
-        align="center"
-        width="100%"
-        style="margin:0 auto;max-width:600px;background-color:#ffffff"
-        role="presentation"
-        cellspacing="0"
-        cellpadding="0"
-        border="0"
-      >
-        <tbody>
-          <tr style="width:100%">
-            <td>
-              <div style="padding:24px 24px 24px 24px;text-align:center">
-                <a
-                  href="https://www.sakhiledumisa.com/"
-                  style="text-decoration:none"
-                  target="_blank"
-                  ><img
-                    alt=""
-                    src="https://www.sakhiledumisa.com/favicon.ico"
-                    height="24"
-                    style="height:24px;outline:none;border:none;text-decoration:none;vertical-align:middle;display:inline-block;max-width:100%"
-                /></a>
-              </div>
-              <div
-                style='color:#000000;font-size:16px;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-weight:normal;text-align:center;padding:16px 24px 16px 24px'
-              >
-                Confirmation of Email Receipt.
-              </div>
-              <h3
-                style='color:#000000;font-weight:bold;text-align:center;margin:0;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-size:20px;padding:16px 24px 16px 24px'
-              >
-                Thank you for your email, ${escapedUserName}. I will get back to
-                you as soon as I can.
-              </h3>
-              <div
-                style='color:#868686;font-size:16px;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-weight:normal;text-align:center;padding:16px 24px 16px 24px'
-              >
-                Please do not reply to this email; it is automated.
-              </div>
-              <div
-                style='color:#868686;font-size:14px;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-weight:normal;text-align:center;padding:16px 24px 16px 24px'
-              >
-                Click the lime/green logo at the top to visit again. Thank you.
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </body>
-</html>`;
+      const thankSubject = `Thanks for your message, ${titledUserName}`;
+      const thankText = `Hi ${titledUserName},\n\nThanks for reaching out — we've received your message and will get back to you shortly.\n\nReply to: ${to}`;
 
       let thankYouResult = null;
       try {
@@ -251,7 +118,15 @@ const createEmailRouter = (resend, redis) => {
           to: sentBy,
           subject: thankSubject,
           text: thankText,
-          html: thankHtml,
+          templateId: 'confirmation-of-email-receipt',
+          personalization: [
+            {
+              email: sentBy,
+              data: {
+                userName: titledUserName
+              }
+            }
+          ],
         });
       } catch (err) {
         console.error('Error sending thank-you email:', err.message || err);
@@ -291,64 +166,16 @@ const createEmailRouter = (resend, redis) => {
           to: email,
           subject: "Email verification code",
           text,
-          html : `<!doctype html>
-<html>
-  <body>
-    <div
-      style='background-color:#ffffff;color:#FFFFFF;font-family:"Iowan Old Style", "Palatino Linotype", "URW Palladio L", P052, serif;font-size:16px;font-weight:400;letter-spacing:0.15008px;line-height:1.5;margin:0;padding:32px 0;min-height:100%;width:100%'
-    >
-      <table
-        align="center"
-        width="100%"
-        style="margin:0 auto;max-width:600px;background-color:#ffffff"
-        role="presentation"
-        cellspacing="0"
-        cellpadding="0"
-        border="0"
-      >
-        <tbody>
-          <tr style="width:100%">
-            <td>
-              <div style="padding:24px 24px 24px 24px;text-align:center">
-                <a
-                  href="https://www.sakhiledumisa.com/"
-                  style="text-decoration:none"
-                  target="_blank"
-                  ><img
-                    alt=""
-                    src="https://www.sakhiledumisa.com/favicon.ico"
-                    height="24"
-                    style="height:24px;outline:none;border:none;text-decoration:none;vertical-align:middle;display:inline-block;max-width:100%"
-                /></a>
-              </div>
-              <div
-                style='color:#000000;font-size:16px;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-weight:normal;text-align:center;padding:16px 24px 16px 24px'
-              >
-                Here is your one-time passcode:
-              </div>
-              <h1
-                style='color:#000000;font-weight:bold;text-align:center;margin:0;font-family:"Nimbus Mono PS", "Courier New", "Cutive Mono", monospace;font-size:32px;padding:16px 24px 16px 24px'
-              >
-                ${code}
-              </h1>
-              <div
-                style='color:#868686;font-size:16px;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-weight:normal;text-align:center;padding:16px 24px 16px 24px'
-              >
-                This code will expire in ${Math.floor(OTP_TTL_SECONDS / 60)}
-                minutes.
-              </div>
-              <div
-                style='color:#868686;font-size:14px;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-weight:normal;text-align:center;padding:16px 24px 16px 24px'
-              >
-                If you did not initiate this activity, please ignore this email.
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </body>
-</html>`});
+          templateId: 'otp-code',
+          personalization: [
+            {
+              email: email,
+              data: {
+                code: code
+              }
+            }
+          ]
+        });
         return res.status(200).json({ message: "OTP sent (no redis)", data, code });
       }
 
@@ -366,65 +193,22 @@ const createEmailRouter = (resend, redis) => {
       await redis.del(attemptsKey);
 
       const text = `Email verification code is: ${code}\n\nThis code expires in ${Math.floor(OTP_TTL_SECONDS / 60)} minutes.`;
-      const html = `<!doctype html>
-<html>
-  <body>
-    <div
-      style='background-color:#ffffff;color:#FFFFFF;font-family:"Iowan Old Style", "Palatino Linotype", "URW Palladio L", P052, serif;font-size:16px;font-weight:400;letter-spacing:0.15008px;line-height:1.5;margin:0;padding:32px 0;min-height:100%;width:100%'
-    >
-      <table
-        align="center"
-        width="100%"
-        style="margin:0 auto;max-width:600px;background-color:#ffffff"
-        role="presentation"
-        cellspacing="0"
-        cellpadding="0"
-        border="0"
-      >
-        <tbody>
-          <tr style="width:100%">
-            <td>
-              <div style="padding:24px 24px 24px 24px;text-align:center">
-                <a
-                  href="https://www.sakhiledumisa.com/"
-                  style="text-decoration:none"
-                  target="_blank"
-                  ><img
-                    alt=""
-                    src="https://www.sakhiledumisa.com/favicon.ico"
-                    height="24"
-                    style="height:24px;outline:none;border:none;text-decoration:none;vertical-align:middle;display:inline-block;max-width:100%"
-                /></a>
-              </div>
-              <div
-                style='color:#000000;font-size:16px;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-weight:normal;text-align:center;padding:16px 24px 16px 24px'
-              >
-                Here is your one-time passcode:
-              </div>
-              <h1
-                style='color:#000000;font-weight:bold;text-align:center;margin:0;font-family:"Nimbus Mono PS", "Courier New", "Cutive Mono", monospace;font-size:32px;padding:16px 24px 16px 24px'
-              >
-                ${code}
-              </h1>
-              <div
-                style='color:#868686;font-size:16px;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-weight:normal;text-align:center;padding:16px 24px 16px 24px'
-              >
-                This code will expire in ${Math.floor(OTP_TTL_SECONDS / 60)}
-                minutes.
-              </div>
-              <div
-                style='color:#868686;font-size:14px;font-family:"Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;font-weight:normal;text-align:center;padding:16px 24px 16px 24px'
-              >
-                If you did not initiate this activity, please ignore this email.
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </body>
-</html>`;
-      const data = await resend.emails.send({ from: RESEND_OTP_FROM, to: email, subject: "Email verification code", text, html });
+      
+      const data = await resend.emails.send({ 
+        from: RESEND_OTP_FROM, 
+        to: email, 
+        subject: "Email verification code", 
+        text, 
+        templateId: 'otp-code',
+        personalization: [
+          {
+            email: email,
+            data: {
+              code: code
+            }
+          }
+        ]
+      });
 
       res.status(200).json({ message: "OTP sent", data });
     } catch (error) {
