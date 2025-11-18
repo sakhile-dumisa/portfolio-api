@@ -68,12 +68,14 @@ const createEmailRouter = (resend, redis) => {
       const cleanSentBy = sanitizeHtml(sentBy, { allowedTags: [], allowedAttributes: {} }).trim();
 
       const subject = `New contact form message from ${titledUserName}`;
+      const textBody = `You have received a new message via the contact form from ${titledUserName} <${sentBy}>:\n\n${cleanMessage}\n\nReply to: ${sentBy}`;
 
-      // Send email using Resend template
+      // Send email using Resend template with text fallback
       const data = await resend.emails.send({
         from,
         to,
         subject,
+        text: textBody, // Required fallback
         template: {
           id: 'inbox',
           variables: {
@@ -88,6 +90,7 @@ const createEmailRouter = (resend, redis) => {
       // Send thank-you email to the user
       const thankFrom = process.env.FROM_CONTACT || from;
       const thankSubject = `Thanks for your message, ${titledUserName}`;
+      const thankText = `Hi ${titledUserName},\n\nThanks for reaching out — we've received your message and will get back to you shortly.\n\nReply to: ${to}`;
 
       let thankYouResult = null;
       try {
@@ -95,6 +98,7 @@ const createEmailRouter = (resend, redis) => {
           from: thankFrom,
           to: sentBy,
           subject: thankSubject,
+          text: thankText, // Required fallback
           template: {
             id: 'confirmation-of-email-receipt',
             variables: {
@@ -130,10 +134,13 @@ const createEmailRouter = (resend, redis) => {
       // If no redis, fallback to a temporary in-memory cooldown (not recommended)
       if (!redis) {
         const code = generateOtp();
+        const text = `Your verification code is: ${code}\n\nThis code expires in ${Math.floor(OTP_TTL_SECONDS / 60)} minutes.`;
+        
         const data = await resend.emails.send({
           from: RESEND_OTP_FROM,
           to: email,
           subject: "Email verification code",
+          text: text, // Required fallback
           template: {
             id: 'otp-code',
             variables: {
@@ -156,11 +163,14 @@ const createEmailRouter = (resend, redis) => {
       // reset attempt counter
       const attemptsKey = `otp-attempts:${email}`;
       await redis.del(attemptsKey);
+
+      const text = `Email verification code is: ${code}\n\nThis code expires in ${Math.floor(OTP_TTL_SECONDS / 60)} minutes.`;
       
       const data = await resend.emails.send({ 
         from: RESEND_OTP_FROM, 
         to: email, 
         subject: "Email verification code", 
+        text: text, // Required fallback
         template: {
           id: 'otp-code',
           variables: {
