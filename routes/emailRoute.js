@@ -56,7 +56,6 @@ const createEmailRouter = (resend, redis) => {
         from,
         to,
         subject,
-        text: textFallback,
         reply_to: cleanSentBy,
         template: {
           id: TEMPLATE_INBOX_ID,
@@ -75,7 +74,6 @@ const createEmailRouter = (resend, redis) => {
         from: process.env.FROM_CONTACT || from,
         to: cleanSentBy,
         subject: `Thanks, ${titledUserName}!`,
-        text: `Hi ${titledUserName},\n\nWe got your message — will reply soon!`,
         template: {
           id: TEMPLATE_CONFIRMATION_ID,
           variables: { userName: titledUserName },
@@ -115,7 +113,6 @@ const createEmailRouter = (resend, redis) => {
         from: RESEND_OTP_FROM,
         to: email,
         subject: "Your verification code",
-        text: `Code: ${code}`,
         template: {
           id: TEMPLATE_OTP_ID,
           variables: { code },
