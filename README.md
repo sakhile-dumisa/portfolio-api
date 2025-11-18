@@ -45,7 +45,7 @@ This README explains how to install, configure, run, and use the API (endpoints,
 Clone the repo and install dependencies:
 
 ```powershell
-npm install
+pnpm install
 ```
 
 Dependencies used (high level): express, sanitize-html, resend, redis, cors, helmet, express-rate-limit, morgan, dotenv.
@@ -88,10 +88,11 @@ Notes:
 
 ```powershell
 # local dev
-npm start
+pnpm start
 
 # or with nodemon for development
-npx nodemon server.js
+# using pnpm to run the tool
+pnpm exec nodemon server.js
 ```
 
 The server hosts routes under `/email` so the endpoints are e.g. `http://localhost:3000/email/api/send-otp`.

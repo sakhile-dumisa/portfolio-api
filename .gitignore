@@ -30,3 +30,6 @@ coverage/
 
 # Misc
 *.tgz
+
+
+.vscode/settings.json
