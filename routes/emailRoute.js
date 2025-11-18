@@ -10,7 +10,7 @@ const createEmailRouter = (resend, redis) => {
   const MAX_VERIFY_ATTEMPTS = Number(process.env.MAX_VERIFY_ATTEMPTS) || 5;
   const RESEND_OTP_FROM = process.env.FROM_VERIFY || "verify@mail.sakhiledumisa.com";
 
-  // Your real template IDs (from Resend dashboard)
+  //template IDs (from Resend dashboard)
   const TEMPLATE_INBOX_ID = process.env.RESEND_TEMPLATE_INBOX_ID || "a461e951-f386-4048-9c06-eca22f44b3b6";
   const TEMPLATE_CONFIRMATION_ID = process.env.RESEND_TEMPLATE_CONFIRMATION_ID || "2df9d8e1-3a66-4835-b936-3d863ec20f59";
   const TEMPLATE_OTP_ID = process.env.RESEND_TEMPLATE_OTP_ID || "eafb27f5-0b1d-4f0a-9212-b86c7f1599bb";
@@ -51,11 +51,10 @@ const createEmailRouter = (resend, redis) => {
       const subject = `New message from ${titledUserName}`;
       const textFallback = `From: ${titledUserName} <${cleanSentBy}>\n\n${cleanMessage}`;
 
-      // EXACTLY AS IN RESEND DOCS — THIS WORKS AGAIN
+    
       const { data, error } = await resend.emails.send({
-        from,
+        from    : `Form Submission <${RESEND_OTP_FROM || from}>`,
         to,
-        subject,
         reply_to: cleanSentBy,
         template: {
           id: TEMPLATE_INBOX_ID,
@@ -71,7 +70,7 @@ const createEmailRouter = (resend, redis) => {
 
       // Thank-you email — same official format
       await resend.emails.send({
-        from: process.env.FROM_CONTACT || from,
+        from: `No-Reply by Sakhile Dumisa <${RESEND_OTP_FROM || from}>`,
         to: cleanSentBy,
         subject: `Thanks, ${titledUserName}!`,
         template: {
@@ -108,14 +107,13 @@ const createEmailRouter = (resend, redis) => {
         await redis.del(`otp-attempts:${email}`);
       }
 
-      // OFFICIAL DOCS FORMAT — WORKS PERFECTLY
+ 
       await resend.emails.send({
-        from: RESEND_OTP_FROM,
+        from: `OTP Verification <${RESEND_OTP_FROM}>`,
         to: email,
-        subject: "Your verification code",
         template: {
           id: TEMPLATE_OTP_ID,
-          variables: { code: Number(code) },
+          variables: { code },
         },
       });
 
@@ -126,10 +124,8 @@ const createEmailRouter = (resend, redis) => {
      }
   });
 
-  // VERIFY OTP (unchanged)
+  // VERIFY OTP
   router.post("/api/verify-otp", async (req, res) => {
-    // ... same as before (no email sending here)
-    // (keeping your existing logic — it's perfect)
     try {
       const { email, code } = req.body;
       if (!email || !code) return res.status(400).json({ error: "Missing data" });
