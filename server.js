@@ -14,6 +14,8 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
 
+app.use(express.static('public'));
+
 
 // Initialize Resend
 let resend;
@@ -70,7 +72,7 @@ app.use(limiter);
 app.use(helmet());
 app.use(express.json());
 app.use(morgan("combined"));
-app.use(express.static('public'));
+
 
 // CORS configuration
 const corsOptions = {
@@ -110,15 +112,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Serve favicon directly from `public` without any auth
-app.get('/favicon.ico', (req, res) => {
-  const faviconPath = path.join(process.cwd(), 'public', 'favicon.ico');
-  return res.sendFile(faviconPath, (err) => {
-    if (err) {
-      res.status(404).end();
-    }
-  });
-});
+
 
 // simple API key middleware
 app.use((req, res, next) => {
