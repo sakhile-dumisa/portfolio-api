@@ -53,7 +53,6 @@ const createEmailRouter = (resend, redis) => {
 
     
       const { data, error } = await resend.emails.send({
-        from    : `Form Submission <${RESEND_OTP_FROM || from}>`,
         to,
         reply_to: cleanSentBy,
         template: {
@@ -70,7 +69,6 @@ const createEmailRouter = (resend, redis) => {
 
       // Thank-you email — same official format
       await resend.emails.send({
-        from: `No-Reply by Sakhile Dumisa <${RESEND_OTP_FROM || from}>`,
         to: cleanSentBy,
         subject: `Thanks, ${titledUserName}!`,
         template: {
@@ -109,7 +107,6 @@ const createEmailRouter = (resend, redis) => {
 
  
       await resend.emails.send({
-        from: `OTP Verification <${RESEND_OTP_FROM}>`,
         to: email,
         template: {
           id: TEMPLATE_OTP_ID,
