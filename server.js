@@ -113,6 +113,19 @@ app.use((err, req, res, next) => {
 });
 
 
+// Ensure favicon is always served in production (Vercel routes all requests
+// to this function, so rely on this explicit handler to bypass API auth)
+app.get('/favicon.ico', (req, res) => {
+  const faviconPath = path.join(process.cwd(), 'public', 'favicon.ico');
+  res.sendFile(faviconPath, (err) => {
+    if (err) {
+      console.warn('favicon not found at', faviconPath);
+      res.status(404).end();
+    }
+  });
+});
+
+
 
 // simple API key middleware
 app.use((req, res, next) => {
