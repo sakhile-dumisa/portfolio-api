@@ -7,6 +7,7 @@ import morgan from "morgan";
 import dotenv from "dotenv";
 import emailRoutes from "./routes/emailRoute.js";
 import { createClient } from 'redis';
+import path from 'path';
 
 dotenv.config();
 
@@ -106,6 +107,16 @@ app.use((err, req, res, next) => {
   console.error("Unhandled error:", err.stack);
   res.status(err.statusCode || 500).json({
     error: err.message || "Something went wrong!",
+  });
+});
+
+// Serve favicon directly from `public` without any auth
+app.get('/favicon.ico', (req, res) => {
+  const faviconPath = path.join(process.cwd(), 'public', 'favicon.ico');
+  return res.sendFile(faviconPath, (err) => {
+    if (err) {
+      res.status(404).end();
+    }
   });
 });
 
