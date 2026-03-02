@@ -55,6 +55,7 @@ const createEmailRouter = (resend, redis) => {
       const { data, error } = await resend.emails.send({
         to,
         replyTo: cleanSentBy,
+        from:`${titledUserName} <${from}>`,
         template: {
           id: TEMPLATE_INBOX_ID,
           variables: {
