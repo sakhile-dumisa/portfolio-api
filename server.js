@@ -82,7 +82,7 @@ const corsOptions = {
     "https://www.sakhiledumisa.info",
     "https://www.sakhiledumisa.info",
     "https://sakhile-dumisa.vercel.app",
-    "http://localhost:3000"
+    "https://dumisasakhile.vercel.app"
   ],
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "x-api-key"],
